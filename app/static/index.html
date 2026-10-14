@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tiger Vector Search</title>
+<style>
+  :root {
+    --bg: #0b1020; --panel: #141a2e; --panel2: #1b2340; --line: #2a3357;
+    --txt: #e8ecf8; --muted: #9aa5c9; --accent: #56b6ff; --accent2: #7cf5c8;
+    --warn: #ffd166; --mono: #c8d3f5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: linear-gradient(180deg,#0b1020,#0e1428); color: var(--txt);
+         font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  header { padding: 22px 28px; border-bottom: 1px solid var(--line); display: flex;
+           align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  .badge { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px;
+           padding: 3px 10px; font-size: 12px; color: var(--accent2); }
+  .badge.warn { color: var(--warn); }
+  main { display: grid; grid-template-columns: 1fr 360px; gap: 18px; padding: 18px 28px 40px; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; background: #0e1428; border: 1px solid var(--line);
+           color: var(--txt); border-radius: 8px; padding: 9px 10px; font-size: 14px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 120px; }
+  button { background: linear-gradient(180deg,#2a6cff,#1f52d6); color: #fff; border: 0;
+           border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  button.ghost { background: var(--panel2); border: 1px solid var(--line); color: var(--txt); font-weight: 500; }
+  .spacer { height: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  td.note { color: var(--mono); }
+  .dist { font-family: ui-monospace, Consolas, monospace; color: var(--accent2); }
+  .pill { font-size: 11px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: var(--muted); }
+  pre { white-space: pre-wrap; word-break: break-word; background: #0e1428; border: 1px solid var(--line);
+        border-radius: 8px; padding: 12px; color: var(--mono); font-size: 13px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .kv b { color: var(--muted); font-weight: 500; }
+  .muted { color: var(--muted); }
+  .status { font-size: 12px; color: var(--muted); min-height: 16px; }
+  code { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Tiger Vector Search</h1>
+    <div class="sub">Hybrid semantic + time-series search · pgvector &amp; pgvectorscale on Tiger Cloud</div>
+  </div>
+  <span class="badge" id="b-embedder">embedder: …</span>
+  <span class="badge" id="b-dim">dim: …</span>
+  <span class="badge" id="b-db">db: …</span>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>Semantic / hybrid search</h2>
+      <label for="q">Query (natural language)</label>
+      <input id="q" value="vibration indicating bearing wear" />
+      <div class="row" style="margin-top:10px">
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="hybrid" selected>hybrid (vector + BM25)</option>
+            <option value="vector">vector only</option>
+            <option value="keyword">keyword only (BM25)</option>
+          </select>
+        </div>
+        <div>
+          <label for="metric">Distance metric</label>
+          <select id="metric">
+            <option value="cosine" selected>cosine (&lt;=&gt;)</option>
+            <option value="l2">l2 (&lt;-&gt;)</option>
+            <option value="ip">inner product (&lt;#&gt;)</option>
+          </select>
+        </div>
+        <div>
+          <label for="k">Top-k</label>
+          <input id="k" type="number" value="8" min="1" max="100" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div>
+          <label for="site">Filter: site</label>
+          <input id="site" placeholder="plant-a" />
+        </div>
+        <div>
+          <label for="sensor">Filter: sensor type</label>
+          <input id="sensor" placeholder="vibration" />
+        </div>
+        <div>
+          <label for="hours">Filter: last N hours</label>
+          <input id="hours" type="number" placeholder="e.g. 24" />
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <button onclick="doSearch()">Search</button>
+      <button class="ghost" onclick="askRag()" style="margin-left:8px">Ask (RAG)</button>
+      <div class="spacer"></div>
+      <div class="status" id="search-status"></div>
+      <div id="results"></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h2>Grounded answer (RAG)</h2>
+      <div id="rag-out" class="muted">Run a query, then press “Ask (RAG)”.</div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h2>Vector database</h2>
+      <div class="kv" id="stats"><span class="muted">Loading…</span></div>
+      <div class="spacer"></div>
+      <button class="ghost" onclick="refreshStats()">Refresh</button>
+      <button class="ghost" onclick="seed()" style="margin-left:8px">Seed 4k rows</button>
+      <div class="spacer"></div>
+      <div class="status" id="stats-status"></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h2>Indexes</h2>
+      <div id="indexes" class="muted">Loading…</div>
+    </div>
+  </aside>
+</main>
+
+<script>
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let d; try { d = await r.json(); } catch { d = { detail: r.statusText }; }
+    throw new Error(d.detail || ("HTTP " + r.status));
+  }
+  return r.json();
+}
+
+function filters() {
+  const f = {};
+  const site = document.getElementById("site").value.trim();
+  const sensor = document.getElementById("sensor").value.trim();
+  const hours = document.getElementById("hours").value.trim();
+  if (site) f.sites = [site];
+  if (sensor) f.sensor_types = [sensor];
+  if (hours) f.start = new Date(Date.now() - Number(hours) * 3600 * 1000).toISOString();
+  return f;
+}
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function renderResults(data) {
+  const el = document.getElementById("results");
+  document.getElementById("search-status").textContent =
+    `${data.count} results · mode=${data.mode} · metric=${data.metric}` +
+    (data.indexed ? " · DiskANN-indexed" : " · sequential scan");
+  if (!data.results.length) { el.innerHTML = "<p class='muted'>No matches.</p>"; return; }
+  const rows = data.results.map(r => `
+    <tr>
+      <td class="dist">${r.distance!=null?r.distance.toFixed(4):""}</td>
+      <td>${esc(r.ts)}</td>
+      <td>${esc(r.site)}<br><span class="pill">${esc(r.device_id)}</span></td>
+      <td>${esc(r.sensor_type)}<br><b>${r.value}${r.unit?esc(r.unit):""}</b></td>
+      <td class="note">${esc(r.note)}</td>
+    </tr>`).join("");
+  el.innerHTML = `<table><thead><tr>
+      <th>distance</th><th>time (UTC)</th><th>site / device</th><th>sensor</th><th>note</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function doSearch() {
+  try {
+    const body = {
+      query: document.getElementById("q").value,
+      k: Number(document.getElementById("k").value) || 8,
+      metric: document.getElementById("metric").value,
+      mode: document.getElementById("mode").value,
+      filters: filters(),
+    };
+    const data = await api("/api/search", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    renderResults(data);
+  } catch (e) { document.getElementById("search-status").textContent = "Error: " + e.message; }
+}
+
+async function askRag() {
+  const el = document.getElementById("rag-out");
+  el.textContent = "Thinking…";
+  try {
+    const body = {
+      question: document.getElementById("q").value,
+      k: Number(document.getElementById("k").value) || 6,
+      filters: filters(),
+    };
+    const data = await api("/api/rag", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    el.innerHTML = `<div class="badge warn">mode: ${esc(data.mode)}</div><pre>${esc(data.answer)}</pre>`;
+  } catch (e) { el.textContent = "Error: " + e.message; }
+}
+
+async function refreshStats() {
+  try {
+    const s = await api("/api/stats");
+    document.getElementById("b-embedder").textContent = "embedder: " + s.embedder;
+    document.getElementById("b-dim").textContent = "dim: " + s.embedding_dim;
+    const ext = s.extensions.map(e => `${e.extname} ${e.extversion}`).join(" · ");
+    document.getElementById("b-db").textContent = "db: " + (s.extensions.find(e=>e.extname==="timescaledb")?.extversion || "?");
+    document.getElementById("stats").innerHTML = `
+      <b>rows</b><span>${s.rows.toLocaleString()}</span>
+      <b>hypertable chunks</b><span>${s.chunks}</span>
+      <b>table size</b><span>${esc(s.size)}</span>
+      <b>vector dim</b><span>${s.embedding_dim}</span>
+      <b>extensions</b><span>${esc(ext)}</span>`;
+    document.getElementById("indexes").innerHTML = s.indexes
+      .map(i => `<div style="margin-bottom:10px"><span class="pill">${esc(i.indexname)}</span><pre style="margin-top:6px">${esc(i.indexdef)}</pre></div>`)
+      .join("");
+    document.getElementById("stats-status").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) { document.getElementById("stats-status").textContent = "Error: " + e.message; }
+}
+
+async function seed() {
+  document.getElementById("stats-status").textContent = "Seeding… (embedding 4000 rows)";
+  try {
+    const r = await api("/api/seed", { method:"POST" });
+    document.getElementById("stats-status").textContent = `seeded ${r.seeded} rows`;
+    refreshStats();
+  } catch (e) { document.getElementById("stats-status").textContent = "Error: " + e.message; }
+}
+
+refreshStats();
+</script>
+</body>
+</html>

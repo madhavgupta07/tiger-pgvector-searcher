@@ -1,0 +1,13 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+psycopg[binary,pool]>=3.1
+pgvector>=0.2.5
+python-dotenv>=1.0
+pydantic>=2.6
+
+# Local ONNX embeddings (default; EMBEDDING_PROVIDER=fastembed):
+#   pip install fastembed
+# Local PyTorch embeddings (EMBEDDING_PROVIDER=local):
+#   pip install sentence-transformers
+# Hosted embeddings (set EMBEDDING_PROVIDER=openai + OPENAI_API_KEY):
+#   pip install openai
